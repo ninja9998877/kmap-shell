@@ -130,6 +130,10 @@ jobs:
           ls -la "$APK"
           echo "APK 大小：$(du -h "$APK" | cut -f1)"
           echo "aapt2: $AAPT2"
+          # badging 很短（十几行），但它是排查断言的唯一现场 ——
+          # 第一次跑就是因为看不到它，只能猜"为什么 sdkVersion 那一行没匹配上"。
+          echo "--- badging.txt 全文"
+          cat badging.txt
 
       # ★ 产物在断言**之前**上传。
       #   检查失败的时候恰恰是最需要产物的时候（去看究竟编出了什么，而不是从
@@ -151,17 +155,27 @@ jobs:
         run: |
           set -euo pipefail
           source .github/assert-lib.sh
-          echo "--- uses-sdk"
-          grep -E "^(sdkVersion|targetSdkVersion)" badging.txt
+          echo "--- uses-sdk（人类可读，判据在下面）"
+          grep -E "^(sdkVersion|minSdkVersion|targetSdkVersion)" badging.txt || echo "（badging 里没有）"
 
           # ★★ 全工程最要紧的一条。★★
           # 官方：target 36 在 sw>=600dp 的屏上忽略 orientation / resizability /
           # aspect ratio，而**平板正是 sw>=600dp**。升到 36 = 清单里写的横屏被系统
           # 直接无视，代码一行没动，平板上就能竖过来。
-          grep -q "^targetSdkVersion:'34'" badging.txt \
-            || fail "targetSdk 不是 34。36 会让横屏在平板上失效（Android 16 起忽略 screenOrientation）。别改这个数字。"
-          grep -q "^sdkVersion:'24'" badging.txt || fail "minSdk 变了（期望 24）"
-          ok "targetSdk=34 minSdk=24（34 是为了保住横屏锁 + 躲开 Android 15 的强制 edge-to-edge）"
+          #
+          # ★ 判据读的是 **xmltree 出来的清单**，不是 badging 的文本行。
+          #   第一版用 `grep "^sdkVersion:'24'" badging.txt`，跑出来没匹配上 ——
+          #   而当时看不出是"minSdk 真的没进包"还是"badging 的格式和想的不一样"，
+          #   因为 badging 的全文没打出来。改成读清单之后，这一条既权威
+          #   （清单是最终产物里的那份）又走的是**已经自测过**的那套解析。
+          #
+          # ★★ 注意这里填的是**十六进制**：清单里的属性值是编码过的整数，
+          #    24 = 0x18、34 = 0x22。填十进制会立刻假失败 ——
+          #    （checkhex 这个语义确实容易踩，但换成"猜类型再比"更糟。）
+          checkhex targetSdkVersion manifest.txt "0x22" \
+            "不是 34。36 会让横屏在平板上失效（Android 16 起忽略 screenOrientation），别改这个数字"
+          checkhex minSdkVersion manifest.txt "0x18" \
+            "minSdk 不是 24（0x18）。没写的话 Android 会当成 1，虽然还能装，但那不是我们声明的"
 
           # 横屏：landscape=0x0, sensorLandscape=0x6, reverseLandscape=0x8 都算
           checkhex screenOrientation manifest.txt "0,6,8" \
