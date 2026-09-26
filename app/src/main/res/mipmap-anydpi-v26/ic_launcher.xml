@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8+ 的自适应图标：背景是纯色，前景是上面那张透明底的城堡。
+     前景已经按"保证可见的 66% 圆"缩过了（见 tools/mkicon.py），
+     所以换成圆形/水滴形遮罩的启动器也不会切掉塔尖。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>

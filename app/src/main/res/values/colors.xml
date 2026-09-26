@@ -17,4 +17,7 @@
     <!-- 给孩子看的那几行用的绿，同页面的 ok/okbg -->
     <color name="ok">#3F9A5E</color>
     <color name="g2">#3FA9D6</color>
+    <!-- App 图标背景（自适应图标用）。与 tools/mkicon.py 里的 BG 一处定义，
+         改颜色要两边一起改 —— 不一致的话传统图标和自适应图标会是两个色。 -->
+    <color name="ic_launcher_background">#E8A33D</color>
 </resources>
