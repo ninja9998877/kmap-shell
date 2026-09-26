@@ -28,11 +28,18 @@ jobs:
 
       # ------------------------------------------------------------ 先跑不要 SDK 的那部分
       #
-      # 两样东西刻意不依赖 Android：
+      # 三样东西刻意不依赖 Android：
       #   Subnet          地址算术（这段恰恰是"看一眼觉得对、跑起来扫不到自己"的那类）
       #   assert-lib.sh   断言库的解析（本机跑不了 aapt2，所以它是"只能到 CI 才知道
       #                   对不对"的一段代码，而它又决定着一堆断言的成败）
+      #   xml-lint.py     资源 XML 的良构性
       # 放在最前面是为了让失败来得快 —— 比等 Android 构建便宜几个数量级。
+      #
+      # ★ xml-lint 是花了一次真实的 CI 轮次换来的：清单里把注释插在了 <activity>
+      #   的属性之间（XML 不允许），注释里还写了 `--`（也不允许）。
+      #   这两个错用标准库解析器本机一秒就能查出来，而 Gradle 要等到
+      #   下完 Gradle、配好 SDK、跑进 AGP 的资源合并任务才报。
+      #   "等 CI 告诉我们"是这个工程最贵的一种反馈方式。
       #
       # 验的都是**产品代码本身**，不是抄一份的副本。抄一份 = 两份实现各自正确、
       # 彼此不一致，而且不会报错。
@@ -44,6 +51,8 @@ jobs:
           java -Dfile.encoding=UTF-8 -cp "$RUNNER_TEMP/check" SubnetCheck
           echo
           bash tools/assert-lib-test.sh
+          echo
+          python3 tools/xml-lint.py
 
       - name: 版本号
         run: |

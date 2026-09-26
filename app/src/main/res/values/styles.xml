@@ -9,7 +9,7 @@
       深色模式自动生效，主题本身不用写两份。
     -->
     <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
-        <!-- 冷启动到 WebView 首帧之间那块底色。跟页面 --paper 一致才不会闪一下。 -->
+        <!-- 冷启动到 WebView 首帧之间那块底色。跟页面里 paper 那个变量一致才不会闪一下。 -->
         <item name="android:windowBackground">@color/paper</item>
         <item name="android:statusBarColor">@color/paper</item>
         <item name="android:navigationBarColor">@color/paper</item>

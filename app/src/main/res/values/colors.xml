@@ -11,10 +11,10 @@
     <color name="ink2">#5C5044</color>
     <color name="ink3">#8C7F70</color>
     <color name="rule2">#C9B99F</color>
-    <!-- --bad / --badbg：失败界面要"看起来像出了问题"，用的是页面里同一个红 -->
+    <!-- 失败界面用的红，跟页面里 bad/badbg 那两个变量同值 -->
     <color name="bad">#D9542F</color>
     <color name="badbg">#FCE4DA</color>
-    <!-- --ok / --okbg：这几行是给孩子看的 -->
+    <!-- 给孩子看的那几行用的绿，同页面的 ok/okbg -->
     <color name="ok">#3F9A5E</color>
     <color name="g2">#3FA9D6</color>
 </resources>
