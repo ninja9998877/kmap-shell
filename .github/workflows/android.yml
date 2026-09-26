@@ -113,7 +113,12 @@ jobs:
           set -euo pipefail
           APK=$(find app/build/outputs/apk/release -name '*.apk' | sort -V | tail -1)
           [ -n "$APK" ] || { echo "::error::没找到 APK"; exit 1; }
-          AAPT2=$(ls -1 "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          # ★ 钉死版本，不用 `ls build-tools/*/aapt2 | tail -1` 取最高的那个。
+          #   断言解析的是 aapt2 的输出，而**输出格式随版本变** ——
+          #   第三次 CI 就是被这个坑掉的：runner 镜像自带 build-tools 37.0.0，
+          #   它把属性值打成十进制（`=34`）而不是老格式的 `(type 0x10)0x22`。
+          #   让"检查什么格式"取决于镜像的更新节奏，等于把断言交给运气。
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
           [ -n "$AAPT2" ] || { echo "::error::没找到 aapt2 —— 下面的检查根本跑不成"; exit 1; }
           BT=$(dirname "$AAPT2")
           echo "APK=$APK"   >> "$GITHUB_ENV"
@@ -169,16 +174,15 @@ jobs:
           #   因为 badging 的全文没打出来。改成读清单之后，这一条既权威
           #   （清单是最终产物里的那份）又走的是**已经自测过**的那套解析。
           #
-          # ★★ 注意这里填的是**十六进制**：清单里的属性值是编码过的整数，
-          #    24 = 0x18、34 = 0x22。填十进制会立刻假失败 ——
-          #    （checkhex 这个语义确实容易踩，但换成"猜类型再比"更糟。）
-          checkhex targetSdkVersion manifest.txt "0x22" \
+          # 判据一律填**十进制** —— checknum 会把清单里的三种写法
+          # （(type 0x10)0x22 / 0x22 / 34）都归一化成十进制再比。
+          checknum targetSdkVersion manifest.txt "34" \
             "不是 34。36 会让横屏在平板上失效（Android 16 起忽略 screenOrientation），别改这个数字"
-          checkhex minSdkVersion manifest.txt "0x18" \
-            "minSdk 不是 24（0x18）。没写的话 Android 会当成 1，虽然还能装，但那不是我们声明的"
+          checknum minSdkVersion manifest.txt "24" \
+            "minSdk 不是 24。没写的话 Android 会当成 1，虽然还能装，但那不是我们声明的"
 
-          # 横屏：landscape=0x0, sensorLandscape=0x6, reverseLandscape=0x8 都算
-          checkhex screenOrientation manifest.txt "0,6,8" \
+          # 强制横屏：landscape=0, sensorLandscape=6, reverseLandscape=8 都算
+          checknum screenOrientation manifest.txt "0,6,8" \
             "清单里没有横屏的 screenOrientation —— 强制横屏没了"
 
           # 分屏：多窗口里系统**无条件**忽略 orientation 请求（跟 targetSdk 无关），
@@ -188,9 +192,9 @@ jobs:
 
           # configChanges：丢了 orientation|screenSize 就是转屏重建 Activity ->
           # WebView 重载 -> **孩子正在做的那道题没了**。
-          CFG_RAW=$(attrval configChanges manifest.txt)
-          CFG=$(hexval "$CFG_RAW")
-          [ -n "$CFG" ] || fail "清单里没有 configChanges"
+          CFG=$(attrnum configChanges manifest.txt)
+          [ -n "$CFG" ] || fail "清单里没有 configChanges，或者它的值读不出来"
+          # orientation=0x80, screenSize=0x400
           if [ $(( CFG & 0x480 )) -ne $(( 0x480 )) ]; then
             fail "configChanges=$CFG 丢了 orientation(0x80) 或 screenSize(0x400)：转屏会重建 Activity，孩子正在做的那道题会消失"
           fi
