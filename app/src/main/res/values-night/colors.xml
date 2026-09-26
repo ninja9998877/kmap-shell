@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色模式，同样抄自 learn.html 的 @media (prefers-color-scheme:dark)。 -->
+<resources>
+    <color name="paper">#1A1614</color>
+    <color name="surface">#26211D</color>
+    <color name="ink">#F0E7DA</color>
+    <color name="ink2">#C4B7A6</color>
+    <color name="ink3">#948877</color>
+    <color name="rule2">#5A4E43</color>
+    <color name="bad">#F08A66</color>
+    <color name="badbg">#3D2118</color>
+    <color name="ok">#6FC48A</color>
+    <color name="g2">#63C4E8</color>
+</resources>

@@ -1,0 +1,25 @@
+# 构建产物
+.gradle/
+build/
+app/build/
+local.properties
+*.apk
+*.aab
+*.ap_
+captures/
+.cxx/
+
+# 密钥绝不进仓库 —— keystore 在 D:\claudeWorkbase\kmap-signing\（仓库外），
+# CI 里从 GitHub Secrets 注入。这里挡一道是防手滑。
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore-password.txt
+
+# 编辑器 / 系统
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

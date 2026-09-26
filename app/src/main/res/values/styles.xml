@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      用**平台**主题，不是 Theme.AppCompat.*：这个工程零 AndroidX 依赖，
+      引 AppCompat 主题就必须引 appcompat 库。
+      Theme.Material.NoActionBar 从 API 21 起就有，minSdk 24 够用。
+
+      颜色全部走 @color/*，所以只要 values-night/colors.xml 覆盖那几个值，
+      深色模式自动生效，主题本身不用写两份。
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <!-- 冷启动到 WebView 首帧之间那块底色。跟页面 --paper 一致才不会闪一下。 -->
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/ink2</item>
+    </style>
+
+    <!-- 失败界面里的按钮：横屏平板，手指比鼠标粗，高度给足。 -->
+    <style name="DiagButton" parent="@android:style/Widget.Material.Button">
+        <item name="android:layout_height">52dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- "服务端原文" 那一块：等宽字体 + 方框，让它看起来像一段日志而不是我们的说辞。 -->
+    <style name="ServerOutput">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:background">@color/surface</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:textIsSelectable">true</item>
+    </style>
+</resources>

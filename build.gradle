@@ -1,0 +1,17 @@
+// AGP 8.5.2 配 Gradle 8.7 配 JDK 17 —— 这三者是一组，动一个就要验另外两个。
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.5.2'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

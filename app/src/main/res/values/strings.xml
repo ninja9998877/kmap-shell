@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">六年知识地图</string>
+    <string name="hint_server">例如 10.0.0.24:8890</string>
+    <string name="btn_connect">连接</string>
+    <string name="btn_scan">自动查找</string>
+</resources>

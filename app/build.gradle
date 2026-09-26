@@ -1,0 +1,85 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.ninja.kmap'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.ninja.kmap"
+        minSdk 24
+
+        // ★★ targetSdk 必须 <= 35。这是全工程唯一"升个版本号就悄悄坏掉"的地方。★★
+        //
+        // 官方原文（Android 16 behavior changes）：
+        //   "For apps targeting Android 16 (API level 36), orientation, resizability,
+        //    and aspect ratio restrictions no longer apply on displays with smallest
+        //    width >= 600dp."
+        // 平板正在 sw>=600dp 这个范围里。也就是说 targetSdk 一旦升到 36，
+        // **清单里写着的 landscape 会被系统直接忽略**，代码一行没动，平板上就能竖过来。
+        //
+        // 为什么不用 35 而用 34：Android 15 对 targetSdk 35 强制 edge-to-edge，
+        // 窗口不再为系统栏和输入法让位，`adjustResize` 得自己接管 IME inset 才不挡输入框。
+        // 34 绕开这一整套，一样满足"锁横屏需要 < 36"，而且侧载不理会商店的 35+ 要求。
+        //
+        // CI 里有一条断言把这个数字钉死（.github/workflows/android.yml），别绕过它。
+        targetSdk 34
+
+        // 带偏移：万一以后换仓库、run_number 从 1 重来，也不会比装过的包更小
+        // （versionCode 降级 = 覆盖安装被拒）。
+        versionCode ((System.getenv('KMAP_VERSION_CODE') ?: '10000') as Integer)
+        versionName (System.getenv('KMAP_VERSION_NAME') ?: '0.1.0')
+
+        // 家长把路由器的 DHCP 保留做好之后，可以在这里填死地址，
+        // 平板就永远不用找、也不用问。留空则走"记住的地址 -> 扫子网 -> 手填"。
+        buildConfigField "String", "DEFAULT_SERVER",
+                "\"${System.getenv('KMAP_DEFAULT_SERVER') ?: ''}\""
+        // 失败界面上显示。家长拍一张截图，就能确定平板上装的是哪个构建 ——
+        // 省掉一整轮"你装的是新的吗"的往返。
+        buildConfigField "String", "BUILD_ID",
+                "\"${System.getenv('KMAP_BUILD_ID') ?: 'local'}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            // 从环境变量读（CI 里由 secrets 注入）。
+            // ★ 读不到就**保持未配置**，让构建在 CI 那关 fail-fast ——
+            //   绝不回退到 debug 签名：debug 签名的包在真机上装不上，
+            //   而且系统只给一句"应用未安装"，大人孩子都无法自行诊断。
+            if (System.getenv('KMAP_KEYSTORE_FILE')) {
+                storeFile file(System.getenv('KMAP_KEYSTORE_FILE'))
+                storePassword System.getenv('KMAP_STORE_PASSWORD')
+                keyAlias System.getenv('KMAP_KEY_ALIAS')
+                keyPassword System.getenv('KMAP_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // 不混淆：这个外壳一共两个类，混淆只让真机上的堆栈变难读，没有任何收益。
+            // （comfyui-client 那份开了 minify，那是它的事。）
+            minifyEnabled false
+            // 配了 signingConfig 之后 AGP 自己会对齐 + 签 v1/v2，
+            // 不需要像墨页那样手写 zipalign + apksigner 后处理（那是 Tauri 出 unsigned 包才要的）。
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // ★ 这里**故意是空的**，别"顺手"加 androidx。
+    //
+    // 全工程只用两样东西：android.app.Activity 和平台自带的 WebView。
+    // 加一个 appcompat 会让 APK 从 ~40KB 涨到 ~2MB，并引入一整类清单合并 /
+    // minSdk 冲突的风险 —— 而这个外壳的全部价值就是"把网页显示出来"。
+    // （参照的 comfyui-client 带了 appcompat + webkit，是它需要，我们不需要。）
+}

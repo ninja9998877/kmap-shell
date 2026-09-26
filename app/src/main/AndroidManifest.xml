@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 要连电脑上的 kmap 服务。摘掉它 app 会静默连不上任何东西，而代码看起来全对。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 扫子网找服务之前，要先知道自己连的是哪个网络、自己是什么地址。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true">
+        <!--
+          usesCleartextTraffic 是为了连 http://10.0.0.x:8890 —— 局域网服务是明文 HTTP，
+          而 targetSdk >= 28 默认禁止明文，WebView 会报 ERR_CLEARTEXT_NOT_PERMITTED。
+
+          为什么不用 network_security_config.xml：它只认 <domain>（主机名或 IP 字面量），
+          **没有 CIDR**，写不出"整个 10.0.0.0/24"。而这台电脑的 IP 会在
+          10.0.0.24 和 10.0.0.205 之间变（开了随机 MAC），枚举不了。
+          ★ 注意：一旦哪天加了 NSC，**usesCleartextTraffic 会被 NSC 覆盖而失效** ——
+            所以 CI 断言里两条是一起查的，只查这个布尔值会"假通过"。
+        -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+
+            <!--
+              强制横屏。用 sensorLandscape 而不是 landscape：
+              两个都是"不许竖屏"，但 sensorLandscape 允许孩子把平板倒过来拿
+              （landscape 会把画面锁死在一个方向，倒过来拿就是倒的）。
+            -->
+            android:screenOrientation="sensorLandscape"
+
+            <!--
+              挡掉分屏。多窗口里系统**无条件**忽略 orientation 请求（跟 targetSdk 无关），
+              孩子一拖分屏，WebView 就拿到一个竖窗口，
+              learn.html 的窄屏布局（innerWidth < 760）会切过去。
+            -->
+            android:resizeableActivity="false"
+
+            <!--
+              输入法弹起时缩小窗口而不是把页面顶出去。
+              **不能改成 adjustPan** —— learn.html 的题干在页面顶部，会被推走。
+            -->
+            android:windowSoftInputMode="adjustResize"
+
+            <!--
+              这一串是为了**不重建 Activity**。
+              重建 = WebView 重载 = **孩子正在做的那道题没了**。
+              orientation|screenSize 是底线（CI 里单独断言这两个位）。
+              uiMode 也放进来：learn.html 有 @media (prefers-color-scheme:dark)，
+              不放的话平板切深色模式会重建并丢进度 —— 用"主题慢一拍"换"不丢题"。
+            -->
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+<!--
+  刻意**没有**加的东西，以及为什么：
+
+  1. `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`
+     —— 官方明说 target 36+ 时这个 property **不能锁方向**，加了只会让人以为
+        横屏有双保险。不支持"看起来像做了防范"。
+
+  2. 代码里调 `setRequestedOrientation()`
+     —— 冗余：清单已经是唯一真相源，而且 target 36 之后一样被忽略。
+        多一处真相 = 两处不一致时不报错、只静默地错。
+-->
