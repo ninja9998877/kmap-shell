@@ -1,6 +1,6 @@
 # kmap-shell
 
-**六年知识地图**（`D:\claudeWorkbase\kmap`）的安卓外壳。
+**六年知识地图**（kmap）的安卓外壳。
 
 一个全屏、**强制横屏**的 WebView，指向电脑上跑着的 `serve.py`。桌面有图标，
 点开就是 kmap，孩子不用输地址。
@@ -133,7 +133,7 @@ APK 约 40KB。加一个 appcompat 会让它涨到 ~2MB 并引入一整类清单
 
 固定 keystore，存 GitHub Secrets（`KMAP_KEYSTORE_B64` / `KMAP_STORE_PASSWORD` /
 `KMAP_KEY_ALIAS` / `KMAP_KEY_PASSWORD`）。本地那份在
-`D:\claudeWorkbase\kmap-signing\`（**仓库外**，别提交）。
+**仓库外**的一个目录里（别提交）。
 
 **为什么要固定**：AGP 在 runner 上找不到 `~/.android/debug.keystore` 会现场
 生成一个，密钥是新的随机值，而 `ubuntu-latest` 每次都是干净 VM ⇒ 每次构建

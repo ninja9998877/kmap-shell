@@ -9,7 +9,7 @@ local.properties
 captures/
 .cxx/
 
-# 密钥绝不进仓库 —— keystore 在 D:\claudeWorkbase\kmap-signing\（仓库外），
+# 密钥绝不进仓库 —— keystore 存在**仓库外**的一个目录里，
 # CI 里从 GitHub Secrets 注入。这里挡一道是防手滑。
 *.jks
 *.keystore

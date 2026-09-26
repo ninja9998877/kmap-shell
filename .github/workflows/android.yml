@@ -1,8 +1,8 @@
 name: Android
 
 # 为什么只能在这里出包：开发机（Windows）**没有 Android SDK**，
-# `ANDROID_HOME=C:\Android\Sdk` 指向一个不存在的目录。
-# 跟墨盒、墨页一样，云构建是唯一途径。
+# `ANDROID_HOME` 指向一个不存在的目录。
+# 云构建是唯一途径。
 #
 # 触发方式：**只手动**。写代码的时候不需要每次都有个新 APK，
 # 只有要装到平板上看的时候才需要 —— 每次 push 都起一台 runner 是纯浪费。
