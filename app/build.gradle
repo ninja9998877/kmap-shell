@@ -22,7 +22,7 @@ android {
         // 34 绕开这一整套，一样满足"锁横屏需要 < 36"，而且侧载不理会商店的 35+ 要求。
         //
         // CI 里有一条断言把这个数字钉死（.github/workflows/android.yml），别绕过它。
-        targetSdk 36
+        targetSdk 34
 
         // 带偏移：万一以后换仓库、run_number 从 1 重来，也不会比装过的包更小
         // （versionCode 降级 = 覆盖安装被拒）。
