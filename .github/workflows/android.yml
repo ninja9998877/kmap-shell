@@ -1,0 +1,284 @@
+name: Android
+
+# 为什么只能在这里出包：开发机（Windows）**没有 Android SDK**，
+# `ANDROID_HOME=C:\Android\Sdk` 指向一个不存在的目录。
+# 跟墨盒、墨页一样，云构建是唯一途径。
+#
+# 触发方式：**只手动**。写代码的时候不需要每次都有个新 APK，
+# 只有要装到平板上看的时候才需要 —— 每次 push 都起一台 runner 是纯浪费。
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      KMAP_STORE_PASSWORD: ${{ secrets.KMAP_STORE_PASSWORD }}
+      KMAP_KEY_ALIAS: ${{ secrets.KMAP_KEY_ALIAS }}
+      KMAP_KEY_PASSWORD: ${{ secrets.KMAP_KEY_PASSWORD }}
+      KMAP_KEYSTORE_B64: ${{ secrets.KMAP_KEYSTORE_B64 }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # ------------------------------------------------------------ 先跑不要 SDK 的那部分
+      #
+      # 两样东西刻意不依赖 Android：
+      #   Subnet          地址算术（这段恰恰是"看一眼觉得对、跑起来扫不到自己"的那类）
+      #   assert-lib.sh   断言库的解析（本机跑不了 aapt2，所以它是"只能到 CI 才知道
+      #                   对不对"的一段代码，而它又决定着一堆断言的成败）
+      # 放在最前面是为了让失败来得快 —— 比等 Android 构建便宜几个数量级。
+      #
+      # 验的都是**产品代码本身**，不是抄一份的副本。抄一份 = 两份实现各自正确、
+      # 彼此不一致，而且不会报错。
+      - name: 不需要 Android SDK 的自测
+        run: |
+          set -euo pipefail
+          javac -encoding UTF-8 -d "$RUNNER_TEMP/check" \
+            app/src/main/java/com/ninja/kmap/Subnet.java tools/SubnetCheck.java
+          java -Dfile.encoding=UTF-8 -cp "$RUNNER_TEMP/check" SubnetCheck
+          echo
+          bash tools/assert-lib-test.sh
+
+      - name: 版本号
+        run: |
+          set -euo pipefail
+          # 带偏移：万一以后换仓库、run_number 从 1 重来，也不会比装过的包更小。
+          # versionCode 降级 = 覆盖安装被系统拒绝。
+          CODE=$((10000 + ${{ github.run_number }}))
+          echo "KMAP_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "KMAP_VERSION_NAME=0.1.${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "KMAP_BUILD_ID=${GITHUB_SHA:0:7} run ${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "versionCode=$CODE  versionName=0.1.${{ github.run_number }}"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          # `packages` 必须显式给：这个 action 的默认值是 'tools platform-tools'，
+          # 而 legacy 的 `tools` 包已经从 SDK 仓库下架 —— `sdkmanager tools` 直接失败，
+          # 整个 job 在构建之前就死掉。升到 v4 也一样（带的还是同一个默认值）。
+          # 现代 AGP 构建不需要 `tools`，它早被 cmdline-tools 取代了。
+          packages: platform-tools
+
+      - name: 装 SDK 平台和构建工具
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      # ------------------------------------------------------------ 签名
+      #
+      # ★ 缺 secret 就**直接失败**，绝不回退 debug 签名。
+      #   回退出来的包在真机上装不上，而系统只给一句「应用未安装」——
+      #   大人孩子都无法自行诊断，只会以为这个 APK 坏了。
+      #
+      #   （顺带记一下为什么非要固定签名：AGP 在 runner 上找不到
+      #    ~/.android/debug.keystore 会**现场生成一个**，密钥是新的随机值，
+      #    而 ubuntu-latest 每次都是干净 VM ⇒ 每次构建签名都不同 ⇒
+      #    新包报「应用未安装」，必须先卸载，而卸载会丢掉存的服务地址。）
+      - name: 还原签名 keystore
+        run: |
+          set -euo pipefail
+          for v in KMAP_KEYSTORE_B64 KMAP_STORE_PASSWORD KMAP_KEY_ALIAS KMAP_KEY_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::缺少 secret $v。缺了就会退回 debug 签名，装不上真机。"
+              exit 1
+            fi
+          done
+          printf '%s' "$KMAP_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/kmap.jks"
+          test -s "$RUNNER_TEMP/kmap.jks" || { echo "::error::keystore 解出来是空的"; exit 1; }
+          echo "KMAP_KEYSTORE_FILE=$RUNNER_TEMP/kmap.jks" >> "$GITHUB_ENV"
+          echo "keystore 已还原：$(stat -c%s "$RUNNER_TEMP/kmap.jks") 字节"
+
+      - name: 构建
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon assembleRelease
+
+      # ------------------------------------------------------------ 环境准备
+      - name: 定位产物、读出清单
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | sort -V | tail -1)
+          [ -n "$APK" ] || { echo "::error::没找到 APK"; exit 1; }
+          AAPT2=$(ls -1 "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          [ -n "$AAPT2" ] || { echo "::error::没找到 aapt2 —— 下面的检查根本跑不成"; exit 1; }
+          BT=$(dirname "$AAPT2")
+          echo "APK=$APK"   >> "$GITHUB_ENV"
+          echo "AAPT2=$AAPT2" >> "$GITHUB_ENV"
+          echo "BT=$BT"     >> "$GITHUB_ENV"
+
+          # ★ screenOrientation 和 usesCleartextTraffic **在 badging 里没有**，
+          #   必须 dump xmltree 才能看到。只查 badging 会以为"查过了"。
+          "$AAPT2" dump badging "$APK" > badging.txt
+          "$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml > manifest.txt
+          test -s manifest.txt || { echo "::error::xmltree 是空的，检查没跑成"; exit 1; }
+
+          echo "APK: $APK"
+          ls -la "$APK"
+          echo "APK 大小：$(du -h "$APK" | cut -f1)"
+          echo "aapt2: $AAPT2"
+
+      # ★ 产物在断言**之前**上传。
+      #   检查失败的时候恰恰是最需要产物的时候（去看究竟编出了什么，而不是从
+      #   日志里猜），把上传放最后就等于"红的那次你什么都拿不到"。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kmap-shell-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      # ================================================================ 断言
+      #
+      # 纪律：**验最终 APK，不验源码。**
+      # 清单合并会改变结果（属性可能来自库清单或 merger 规则），只有产物算数。
+      # 而且每个"检查没跑成"都必须当**失败**而不是跳过 ——
+      # 一个悄悄没跑的检查，看起来和通过一模一样。
+
+      - name: 断言 1 —— 横屏、targetSdk、分屏
+        run: |
+          set -euo pipefail
+          source .github/assert-lib.sh
+          echo "--- uses-sdk"
+          grep -E "^(sdkVersion|targetSdkVersion)" badging.txt
+
+          # ★★ 全工程最要紧的一条。★★
+          # 官方：target 36 在 sw>=600dp 的屏上忽略 orientation / resizability /
+          # aspect ratio，而**平板正是 sw>=600dp**。升到 36 = 清单里写的横屏被系统
+          # 直接无视，代码一行没动，平板上就能竖过来。
+          grep -q "^targetSdkVersion:'34'" badging.txt \
+            || fail "targetSdk 不是 34。36 会让横屏在平板上失效（Android 16 起忽略 screenOrientation）。别改这个数字。"
+          grep -q "^sdkVersion:'24'" badging.txt || fail "minSdk 变了（期望 24）"
+          ok "targetSdk=34 minSdk=24（34 是为了保住横屏锁 + 躲开 Android 15 的强制 edge-to-edge）"
+
+          # 横屏：landscape=0x0, sensorLandscape=0x6, reverseLandscape=0x8 都算
+          checkhex screenOrientation manifest.txt "0,6,8" \
+            "清单里没有横屏的 screenOrientation —— 强制横屏没了"
+
+          # 分屏：多窗口里系统**无条件**忽略 orientation 请求（跟 targetSdk 无关），
+          # 孩子一拖分屏，WebView 就拿到一个竖窗口。
+          checkbool resizeableActivity manifest.txt false \
+            "resizeableActivity 必须 false，否则孩子可以拖分屏，横屏锁会被忽略"
+
+          # configChanges：丢了 orientation|screenSize 就是转屏重建 Activity ->
+          # WebView 重载 -> **孩子正在做的那道题没了**。
+          CFG_RAW=$(attrval configChanges manifest.txt)
+          CFG=$(hexval "$CFG_RAW")
+          [ -n "$CFG" ] || fail "清单里没有 configChanges"
+          if [ $(( CFG & 0x480 )) -ne $(( 0x480 )) ]; then
+            fail "configChanges=$CFG 丢了 orientation(0x80) 或 screenSize(0x400)：转屏会重建 Activity，孩子正在做的那道题会消失"
+          fi
+          ok "configChanges=$CFG 含 orientation|screenSize"
+
+      - name: 断言 2 —— 允许明文 HTTP
+        run: |
+          set -euo pipefail
+          source .github/assert-lib.sh
+          # ★ 这里有个「假通过」的陷阱：一旦清单挂了 networkSecurityConfig，
+          #   usesCleartextTraffic 就**被 NSC 覆盖而失效**。
+          #   只查那个布尔值会绿着放过一个连不上局域网的包。所以两条一起看。
+          checkabsent networkSecurityConfig manifest.txt \
+            "它会覆盖 usesCleartextTraffic。这个工程不用 NSC，因为 NSC 只认 <domain>、没有 CIDR，写不出整个 10.0.0.0/24"
+          checkbool usesCleartextTraffic manifest.txt true \
+            "连 http:// 局域网会报 ERR_CLEARTEXT_NOT_PERMITTED（targetSdk>=28 默认禁止明文）"
+
+      - name: 断言 3 —— 权限、启动入口、不是 debuggable
+        run: |
+          set -euo pipefail
+          source .github/assert-lib.sh
+          grep -E "^uses-permission" badging.txt || true
+
+          # 跟墨盒**正好相反**：墨盒断言「不许有 INTERNET」，这里必须有。
+          # 摘掉之后 app 静默连不上任何东西，而代码看起来全对。
+          grep -q "android.permission.INTERNET" badging.txt \
+            || fail "APK 里没有 INTERNET 权限 —— 它连不上任何东西"
+          grep -q "android.permission.ACCESS_NETWORK_STATE" badging.txt \
+            || fail "没有 ACCESS_NETWORK_STATE —— 扫子网前读不到自己连的是哪个网络"
+          ok "INTERNET / ACCESS_NETWORK_STATE 都在"
+
+          grep -q "^launchable-activity:" badging.txt \
+            || fail "没有 launchable-activity —— 装上了但桌面没图标"
+          ok "桌面图标入口在"
+
+          if grep -q "^application-debuggable" badging.txt; then
+            fail "产物是 debuggable 的 —— 打的是 assembleDebug 而不是 Release"
+          fi
+          ok "不是 debuggable"
+
+      - name: 断言 4 —— 纪律：包里不能有服务端的东西
+        run: |
+          set -euo pipefail
+          # 这条守的是 kmap 的两条硬性设计：**答案不发前端**、**LLM key 不进包**。
+          # 哪天有人「顺手」把 .env 或 learn.html 复制进 assets/，只有这条会发现 ——
+          # 因为那样做出来的 app 能跑、能出题，只是把答案和密钥一起发出去了。
+          unzip -l "$APK" > apk-entries.txt
+          if grep -qE '(^|/)(\.env|learn\.html|progress\.json)$' apk-entries.txt; then
+            echo "::error::APK 里出现了服务端的文件"
+            grep -E '(^|/)(\.env|learn\.html|progress\.json)$' apk-entries.txt
+            exit 1
+          fi
+          unzip -p "$APK" classes.dex > classes.dex.bin
+          for needle in LLM_API_KEY LLM_BASE_URL; do
+            if grep -aq "$needle" classes.dex.bin; then
+              echo "::error::classes.dex 里出现了 $needle —— 服务端的配置漏进包了"
+              exit 1
+            fi
+          done
+          echo "  OK  包里没有 .env / learn.html / progress.json，dex 里没有 LLM key"
+
+      - name: 断言 5 —— 签名指纹和 zip 对齐
+        run: |
+          set -euo pipefail
+          source .github/assert-lib.sh
+          "$BT/zipalign" -c -v 4 "$APK" > zipalign.txt
+          ok "zipalign 4 通过（没对齐的话老设备装不上）"
+
+          "$BT/apksigner" verify --print-certs "$APK" > certs.txt
+          grep -i "SHA-256 digest" certs.txt || true
+          ACTUAL=$(grep -m1 -oE '[0-9a-fA-F]{64}' certs.txt | tr 'A-Z' 'a-z' || true)
+          [ -n "$ACTUAL" ] || fail "读不出签名指纹 —— 这条检查根本没跑成"
+
+          EXPECTED=$(grep -v '^#' expected-signer-sha256.txt | tr -d ' :\r\n' | tr 'A-Z' 'a-z')
+          [ -n "$EXPECTED" ] || fail "expected-signer-sha256.txt 里没有指纹"
+
+          # ★ 为什么值得钉死：签名一换，新包就**无法覆盖安装**，家长必须先卸载，
+          #   而卸载会丢掉 App 里存的服务地址。真机上这个后果只表现为一句「应用未安装」。
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::签名指纹和仓库里钉的不一样"
+            echo "::error::  期望 $EXPECTED"
+            echo "::error::  实际 $ACTUAL"
+            echo "::error::新包将无法覆盖安装 —— 家长要先卸载，然后重新配对。"
+            exit 1
+          fi
+          ok "签名指纹和 expected-signer-sha256.txt 一致"
+
+      - name: 断言 6 —— 体积
+        run: |
+          set -euo pipefail
+          BYTES=$(stat -c%s "$APK")
+          echo "APK 体积：$((BYTES / 1024)) KB"
+          # 这个外壳的价值就是「把网页显示出来」，40KB 左右正常。
+          # 涨到几百 KB 说明有人加了依赖（最可能是 androidx）—— 不是错误但值得问一句，
+          # 所以只警告，不失败。
+          if [ "$BYTES" -gt 512000 ]; then
+            echo "::warning::APK 超过 500KB 了（$BYTES 字节）。有人加了依赖吗？"
+            unzip -l "$APK" > sizes.txt
+            awk 'NF >= 4 && $1 ~ /^[0-9]+$/ {printf "%8.1f KB  %s\n", $1/1024, $4}' sizes.txt \
+              > sizes-sorted.txt
+            sort -rn sizes-sorted.txt > sizes-top.txt
+            echo "--- 最大的几块"
+            head -12 sizes-top.txt
+          fi
+
+      - name: 通过
+        run: |
+          echo "================================================"
+          echo "全部断言通过。APK：$APK"
+          echo "versionName 0.1.${{ github.run_number }} / versionCode $((10000 + ${{ github.run_number }}))"
+          echo
+          echo "装到平板上之后，连按两次返回键打开诊断面板，上面有构建号 ——"
+          echo "拍一张截图就能确认装的是不是这一次的。"
+          echo "================================================"
