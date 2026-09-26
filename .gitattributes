@@ -1,0 +1,8 @@
+# 行尾钉死。不写这个的话，core.autocrlf=true 的机器（这台就是）会把 .sh 检出成
+# CRLF —— 而带 CRLF 的 shell 脚本在 Git Bash 里跑起来会因为 \r 出各种怪问题
+# （shebang 失效、heredoc 结束符匹配不上）。
+* text=auto eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.png binary
+*.apk binary
